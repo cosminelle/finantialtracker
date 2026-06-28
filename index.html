@@ -58,6 +58,8 @@ a{ color: inherit; }
 
 button, input{ font-family: inherit; color: inherit; }
 
+[hidden]{ display: none !important; }
+
 :focus-visible{
   outline: 2px solid var(--gold-deep);
   outline-offset: 2px;
@@ -440,49 +442,87 @@ input[type="date"]{
   .grid-two{ grid-template-columns: 1fr; }
 }
 
-.breakdown-list{ display: flex; flex-direction: column; gap: 14px; }
-.bk-row{
-  display: grid;
-  grid-template-columns: 26px 1fr auto;
-  align-items: center;
-  gap: 10px;
-}
-.bk-icon{
-  width: 26px; height: 26px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 50%;
-  background: var(--chip-soft, var(--paper-deep));
-  color: var(--cat-color, var(--ink-faint));
-}
-.bk-icon svg{ width: 14px; height: 14px; }
-.bk-main{ min-width: 0; }
-.bk-top{
+.donut-card{
   display: flex;
-  justify-content: space-between;
-  font-size: 0.84rem;
-  margin-bottom: 5px;
-  gap: 8px;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
 }
-.bk-label{ font-weight: 600; }
-.bk-pct{ color: var(--ink-faint); font-family: var(--font-mono); font-size: 0.78rem; }
-.bk-bar-track{
-  height: 7px;
-  background: var(--paper-deep);
-  border-radius: 4px;
-  overflow: hidden;
+.donut-wrap{
+  position: relative;
+  width: 200px;
+  height: 200px;
+  flex-shrink: 0;
 }
-.bk-bar-fill{
-  height: 100%;
-  border-radius: 4px;
-  background: var(--cat-color, var(--gold));
-  transition: width 0.5s cubic-bezier(.2,.8,.2,1);
-  width: 0%;
+.donut-wrap svg{ width: 100%; height: 100%; }
+.donut-seg{
+  cursor: pointer;
+  transition: opacity 0.15s ease, stroke-width 0.15s ease;
 }
-.bk-amount{
+.donut-center{
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 108px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  pointer-events: none;
+}
+.donut-center-amount{
+  display: block;
   font-family: var(--font-mono);
   font-weight: 600;
-  font-size: 0.92rem;
+  font-size: 1.08rem;
+  color: var(--ink);
+  transition: color 0.15s ease;
+  font-variant-numeric: tabular-nums;
+}
+.donut-center-label{
+  display: block;
+  margin-top: 3px;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+}
+
+.legend-list{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+.legend-row{
+  display: grid;
+  grid-template-columns: 12px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 5px;
+  cursor: default;
+}
+.legend-row:hover{ background: var(--paper-deep); }
+.legend-row.is-active-row{ background: var(--chip-soft, var(--paper-deep)); }
+.legend-dot{
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--cat-color, var(--ink-faint));
+}
+.legend-label{ font-weight: 600; font-size: 0.85rem; }
+.legend-amount{
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.85rem;
   white-space: nowrap;
+}
+.legend-pct{
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+  width: 34px;
+  text-align: right;
 }
 
 .empty-note{
@@ -515,6 +555,7 @@ input[type="date"]{
 }
 .btn-ghost svg{ width: 13px; height: 13px; }
 .btn-ghost:hover{ border-color: var(--gold); color: var(--ink); }
+.btn-ghost-danger:hover{ border-color: var(--red); color: var(--red); }
 
 .history-list{
   display: flex;
@@ -707,7 +748,16 @@ input[type="date"]{
   <section class="grid-two">
     <section class="card">
       <h2 class="card-title">Where it's going</h2>
-      <div id="breakdownList" class="breakdown-list"></div>
+      <div class="donut-card" id="donutCard">
+        <div class="donut-wrap" id="donutWrap">
+          <svg viewBox="0 0 200 200" id="donutSvg" aria-hidden="true"></svg>
+          <div class="donut-center">
+            <span class="donut-center-amount" id="donutCenterAmount">$0.00</span>
+            <span class="donut-center-label" id="donutCenterLabel">Total</span>
+          </div>
+        </div>
+        <div class="legend-list" id="legendList"></div>
+      </div>
       <p class="empty-note" id="breakdownEmpty" hidden>Nothing logged for this range yet.</p>
     </section>
 
@@ -718,6 +768,7 @@ input[type="date"]{
       <div class="history-actions">
         <button class="btn-ghost" id="exportBtn" type="button">Export ledger</button>
         <button class="btn-ghost" id="importBtn" type="button">Import ledger</button>
+        <button class="btn-ghost btn-ghost-danger" id="clearBtn" type="button">Clear history</button>
         <input type="file" id="importFile" accept="application/json" hidden>
       </div>
       <div id="historyList" class="history-list"></div>
@@ -793,6 +844,9 @@ input[type="date"]{
     filter: "month",
     selectedCategory: null
   };
+
+  var lastGrandTotal = 0;
+  var lastCount = 0;
 
   function loadJSON(key, fallback){
     try{
@@ -954,18 +1008,31 @@ input[type="date"]{
   }
 
   /* ---------------------------------------------------------------
-     RENDER: BREAKDOWN
+     RENDER: BREAKDOWN (donut chart + legend)
+     Built from stacked SVG circle segments using stroke-dasharray —
+     each category is its own circle so it can carry its own hover
+     and click handlers. The whole ring is rotated -90deg so the
+     first slice starts at 12 o'clock instead of 3 o'clock.
   ------------------------------------------------------------------*/
+  var DONUT_R = 76;
+  var DONUT_STROKE = 32;
+  var DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_R;
+
   function renderBreakdown(){
     var list = filteredTransactions();
-    var container = document.getElementById("breakdownList");
+    var donutCard = document.getElementById("donutCard");
     var emptyNote = document.getElementById("breakdownEmpty");
-    container.innerHTML = "";
+    var svg = document.getElementById("donutSvg");
+    var legend = document.getElementById("legendList");
 
     if(list.length === 0){
+      donutCard.hidden = true;
       emptyNote.hidden = false;
+      svg.innerHTML = "";
+      legend.innerHTML = "";
       return;
     }
+    donutCard.hidden = false;
     emptyNote.hidden = true;
 
     var totals = {};
@@ -978,27 +1045,85 @@ input[type="date"]{
       return { catId: catId, amount: totals[catId] };
     }).sort(function(a,b){ return b.amount - a.amount; });
 
+    lastGrandTotal = grandTotal;
+    lastCount = list.length;
+
+    var svgParts = [];
+    svgParts.push(
+      '<circle cx="100" cy="100" r="' + DONUT_R + '" fill="none" stroke="var(--paper-deep)" stroke-width="' + DONUT_STROKE + '"></circle>'
+    );
+    svgParts.push('<g transform="rotate(-90 100 100)">');
+
+    var cumulative = 0;
+    var legendHTML = "";
+
     rows.forEach(function(row){
       var cat = getCategory(row.catId);
       var pct = grandTotal > 0 ? (row.amount / grandTotal) * 100 : 0;
+      var segLen = (pct / 100) * DONUT_CIRCUMFERENCE;
 
-      var el = document.createElement("div");
-      el.className = "bk-row";
-      el.style.setProperty("--cat-color", cat.color);
-      el.style.setProperty("--chip-soft", tint(cat.color, 0.85));
-      el.innerHTML =
-        '<span class="bk-icon">' + (ICONS[cat.icon] || ICONS.other) + '</span>' +
-        '<span class="bk-main">' +
-          '<span class="bk-top"><span class="bk-label">' + escapeHTML(cat.label) + '</span>' +
-            '<span class="bk-pct">' + Math.round(pct) + '%</span></span>' +
-          '<span class="bk-bar-track"><span class="bk-bar-fill"></span></span>' +
-        '</span>' +
-        '<span class="bk-amount">' + formatMoney(row.amount) + '</span>';
-      container.appendChild(el);
+      svgParts.push(
+        '<circle class="donut-seg" data-cat="' + cat.id + '" data-amount="' + row.amount + '" data-pct="' + pct + '" ' +
+        'cx="100" cy="100" r="' + DONUT_R + '" fill="none" stroke="' + cat.color + '" stroke-width="' + DONUT_STROKE + '" ' +
+        'stroke-dasharray="' + segLen + ' ' + (DONUT_CIRCUMFERENCE - segLen) + '" ' +
+        'stroke-dashoffset="' + (-cumulative) + '"></circle>'
+      );
+      cumulative += segLen;
 
-      var fill = el.querySelector(".bk-bar-fill");
-      requestAnimationFrame(function(){ fill.style.width = pct + "%"; });
+      legendHTML +=
+        '<div class="legend-row" data-cat="' + cat.id + '" data-amount="' + row.amount + '" data-pct="' + pct + '" ' +
+        'style="--cat-color:' + cat.color + '; --chip-soft:' + tint(cat.color, 0.85) + '">' +
+          '<span class="legend-dot"></span>' +
+          '<span class="legend-label">' + escapeHTML(cat.label) + '</span>' +
+          '<span class="legend-amount">' + formatMoney(row.amount) + '</span>' +
+          '<span class="legend-pct">' + Math.round(pct) + '%</span>' +
+        '</div>';
     });
+
+    svgParts.push('</g>');
+    svg.innerHTML = svgParts.join("");
+    legend.innerHTML = legendHTML;
+
+    showCenterTotal();
+
+    var handler = function(e){
+      var el = e.currentTarget;
+      highlightCategory(el.dataset.cat, parseFloat(el.dataset.amount), parseFloat(el.dataset.pct));
+    };
+    svg.querySelectorAll(".donut-seg").forEach(function(seg){
+      seg.addEventListener("mouseenter", handler);
+      seg.addEventListener("click", handler);
+    });
+    legend.querySelectorAll(".legend-row").forEach(function(row){
+      row.addEventListener("mouseenter", handler);
+      row.addEventListener("click", handler);
+    });
+  }
+
+  function highlightCategory(catId, amount, pct){
+    var cat = getCategory(catId);
+    document.querySelectorAll(".donut-seg").forEach(function(c){
+      var isMatch = c.dataset.cat === catId;
+      c.style.opacity = isMatch ? "1" : "0.4";
+      c.style.strokeWidth = isMatch ? "36" : String(DONUT_STROKE);
+    });
+    document.querySelectorAll(".legend-row").forEach(function(r){
+      r.classList.toggle("is-active-row", r.dataset.cat === catId);
+    });
+    document.getElementById("donutCenterAmount").textContent = formatMoney(amount);
+    document.getElementById("donutCenterAmount").style.color = cat.color;
+    document.getElementById("donutCenterLabel").textContent = cat.label + " · " + Math.round(pct) + "%";
+  }
+
+  function showCenterTotal(){
+    document.querySelectorAll(".donut-seg").forEach(function(c){
+      c.style.opacity = "1";
+      c.style.strokeWidth = String(DONUT_STROKE);
+    });
+    document.querySelectorAll(".legend-row").forEach(function(r){ r.classList.remove("is-active-row"); });
+    document.getElementById("donutCenterAmount").style.color = "";
+    document.getElementById("donutCenterAmount").textContent = formatMoney(lastGrandTotal);
+    document.getElementById("donutCenterLabel").textContent = lastCount + (lastCount === 1 ? " entry" : " entries");
   }
 
   /* ---------------------------------------------------------------
@@ -1113,6 +1238,10 @@ input[type="date"]{
       renderBreakdown();
       renderHistory();
     });
+  });
+
+  document.getElementById("donutCard").addEventListener("mouseleave", function(){
+    showCenterTotal();
   });
 
   /* ---------------------------------------------------------------
@@ -1234,6 +1363,29 @@ input[type="date"]{
       renderHero();
       renderBreakdown();
       renderHistory();
+    });
+  });
+
+  document.getElementById("clearBtn").addEventListener("click", function(){
+    if(state.transactions.length === 0){
+      showToast("Already empty — fresh start whenever you need it.");
+      return;
+    }
+    var count = state.transactions.length;
+    var ok = window.confirm(
+      "Delete all " + count + " entries from this device? This can't be undone."
+    );
+    if(!ok) return;
+
+    var backup = state.transactions.slice();
+    state.transactions = [];
+    saveTransactions();
+    renderAll();
+
+    showToast("Ledger cleared. Fresh start.", function(){
+      state.transactions = backup;
+      saveTransactions();
+      renderAll();
     });
   });
 
